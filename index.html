@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Grove — Pomodoro Forest</title>
+<title>Blossom — Pomodoro Study Timer</title>
 
 <!--
   Two Google Fonts:
@@ -18,15 +18,59 @@
 
 <style>
   /* ---------- Design tokens ---------- */
+  /* Default theme = Summer. Each [data-theme] block below overrides these
+     same variable names, so nothing else in the CSS needs to change when
+     the theme switches — every rule already reads from these tokens.
+     Spring/Summer are bright daylight scenes; Autumn/Winter are deliberately
+     pushed dark and dusky so all four don't just read as "same app, tinted." */
   :root {
-    --soil:      #F1EDE1; /* page background — warm, light, like paper or dry soil */
-    --pine:      #23392E; /* deep green — main text color */
-    --pine-dim:  #5B6E63; /* muted green — secondary text */
-    --bark:      #6B4630; /* brown — trunk, borders */
-    --moss:      #7C9473; /* soft green — leaves, progress ring */
-    --ember:     #C98A3D; /* warm gold — accent, active state */
+    --soil:      #EAF0DE; /* page background */
+    --pine:      #16281D; /* main text color, deep and rich */
+    --pine-dim:  #4C5F51; /* muted secondary text */
+    --bark:      #55381F; /* trunk */
+    --moss:      #3E7A4A; /* leaves, progress ring */
+    --ember:     #E3A62A; /* warm accent — the ring glow while running */
     --danger:    #B4472F; /* dying tree / warning */
     --card:      #FFFFFF;
+    --border:    #DAD4C0;
+  }
+
+  [data-theme="spring"] {
+    --soil:      #FDF4F7; /* pale blossom-morning white-pink */
+    --pine:      #2E4A32;
+    --pine-dim:  #7C8F79;
+    --bark:      #A97C63;
+    --moss:      #6FCB5A; /* vivid fresh green */
+    --ember:     #F2879E; /* saturated cherry-blossom pink */
+    --danger:    #C15B4A;
+    --card:      #FFFFFF;
+    --border:    #F0DCE2;
+  }
+
+  [data-theme="autumn"] {
+    /* A dusky harvest-evening scene rather than a light tint. */
+    --soil:      #3B2416; /* deep rust-brown background */
+    --pine:      #F6E4CC; /* warm cream text — needs contrast on dark bg */
+    --pine-dim:  #C79E77;
+    --bark:      #D98C4A; /* caramel trunk, visible against the dark backdrop */
+    --moss:      #E0791F; /* burnt-orange canopy */
+    --ember:     #FF6B45; /* hot ember-red accent */
+    --danger:    #FF7A5C;
+    --card:      #4A2E1B;
+    --border:    #6B4527;
+  }
+
+  [data-theme="winter"] {
+    /* A cold, near-night sky instead of a pale icy tint. */
+    --soil:      #16232F; /* deep slate-blue night */
+    --pine:      #E8F2F6; /* icy white text */
+    --pine-dim:  #90ACB8;
+    --bark:      #63808C; /* cool blue-gray trunk */
+    --moss:      #5FA6AD; /* frosted teal canopy */
+    --ember:     #7FE0EA; /* bright icy cyan accent */
+    --danger:    #E88A7A;
+    --card:      #223342;
+    --border:    #3A4E5C;
   }
 
   * { box-sizing: border-box; }
@@ -40,6 +84,7 @@
     background: var(--soil);
     color: var(--pine);
     font-family: 'Inter', sans-serif;
+    transition: background 0.5s ease, color 0.5s ease;
   }
 
   .app {
@@ -60,8 +105,93 @@
   .subtitle {
     color: var(--pine-dim);
     font-size: 14px;
-    margin: 0 0 36px;
+    margin: 0 0 20px;
   }
+
+  .season-picker {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-bottom: 28px;
+  }
+  .season-btn {
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--pine-dim);
+    padding: 6px 12px;
+    font-size: 13px;
+    border-radius: 999px;
+  }
+  .season-btn.active {
+    border-color: var(--pine);
+    color: var(--pine);
+    font-weight: 600;
+  }
+
+  /* ---------- Ambient season particles ---------- */
+  /* A handful of small floating shapes drifting down the page. Purely
+     decorative (pointer-events: none so they never block clicks), and
+     each season swaps in a different shape/color/motion via [data-theme]. */
+  .ambience {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .particle {
+    position: absolute;
+    top: -20px;
+    left: var(--x);
+    width: 10px;
+    height: 10px;
+    background: var(--moss);
+    border-radius: 50%;
+    opacity: 0.5;
+    animation: drift var(--dur) linear infinite;
+    animation-delay: var(--delay);
+  }
+
+  @keyframes drift {
+    0%   { transform: translateY(0) translateX(0) rotate(0deg); }
+    50%  { transform: translateY(50vh) translateX(20px) rotate(180deg); }
+    100% { transform: translateY(105vh) translateX(-10px) rotate(360deg); }
+  }
+
+  /* Summer: small warm light motes, barely-there and slow */
+  .particle { background: var(--ember); opacity: 0.35; }
+
+  /* Spring: petals — soft pink, slightly elongated, gentle sway */
+  [data-theme="spring"] .particle {
+    width: 9px; height: 13px;
+    background: var(--ember);
+    border-radius: 60% 40% 60% 40%;
+    opacity: 0.55;
+  }
+
+  /* Autumn: falling leaves — bigger, warm, tumbling faster */
+  [data-theme="autumn"] .particle {
+    width: 12px; height: 12px;
+    background: var(--moss);
+    border-radius: 0% 60% 0% 60%;
+    opacity: 0.6;
+  }
+
+  /* Winter: snow — small white, drifting slowly and softly */
+  [data-theme="winter"] .particle {
+    width: 7px; height: 7px;
+    background: #FFFFFF;
+    border-radius: 50%;
+    opacity: 0.8;
+  }
+
+  /* Respect users who've asked for reduced motion at the OS level */
+  @media (prefers-reduced-motion: reduce) {
+    .particle { animation: none; display: none; }
+  }
+
+  .app { position: relative; z-index: 1; }
 
   /* ---------- Timer ring ---------- */
   .ring-wrap {
@@ -73,13 +203,19 @@
 
   .ring-wrap svg { transform: rotate(-90deg); }
 
-  .ring-track { stroke: #E4DFD0; }
+  .ring-track { stroke: var(--border); }
   .ring-progress {
     stroke: var(--moss);
     stroke-linecap: round;
-    transition: stroke-dashoffset 1s linear, stroke 0.4s ease;
+    transition: stroke-dashoffset 1s linear, stroke 0.4s ease, filter 0.4s ease;
   }
   .ring-progress.dying { stroke: var(--danger); }
+  .ring-progress.active {
+    /* Ember gold now has a real job: a soft glow around the ring while a
+       session is actively counting down, so "in progress" has its own
+       distinct visual signal instead of green doing every job. */
+    filter: drop-shadow(0 0 6px var(--ember));
+  }
 
   .time-label {
     position: absolute;
@@ -134,7 +270,7 @@
   .btn-secondary {
     background: transparent;
     color: var(--pine-dim);
-    border-color: #D9D2BE;
+    border-color: var(--border);
   }
   .btn-secondary:hover { border-color: var(--bark); color: var(--pine); }
 
@@ -149,7 +285,7 @@
   }
   .length-btn {
     background: var(--card);
-    border: 1px solid #E4DFD0;
+    border: 1px solid var(--border);
     color: var(--pine-dim);
     padding: 8px 14px;
     font-size: 13px;
@@ -158,7 +294,7 @@
   .length-btn.active {
     border-color: var(--moss);
     color: var(--pine);
-    background: #EEF2E9;
+    background: color-mix(in srgb, var(--moss) 15%, var(--card));
   }
 
   /* ---------- Leaderboard ---------- */
@@ -166,7 +302,7 @@
     text-align: left;
     margin-top: 8px;
     padding-top: 28px;
-    border-top: 1px solid #E4DFD0;
+    border-top: 1px solid var(--border);
   }
 
   .leaderboard h2 {
@@ -186,7 +322,7 @@
 
   .lb-tab {
     background: transparent;
-    border: 1px solid #E4DFD0;
+    border: 1px solid var(--border);
     color: var(--pine-dim);
     padding: 6px 14px;
     font-size: 13px;
@@ -214,7 +350,7 @@
   }
 
   .lb-row.you {
-    background: #EEF2E9; /* highlight your own row so it's easy to spot */
+    background: color-mix(in srgb, var(--moss) 15%, var(--card));
   }
 
   .lb-rank {
@@ -243,9 +379,20 @@
 </head>
 <body>
 
+<div class="ambience" id="ambience"></div>
+
 <div class="app">
-  <h1>Grove</h1>
-  <p class="subtitle">Stay on task. Watch it grow.</p>
+  <h1>Blossom</h1>
+  <p class="subtitle">Your mind will blossom along with this tree.</p>
+
+  <!-- Theme picker: swaps the CSS custom properties in :root by setting
+       data-theme on <body>. Doesn't touch layout or any other logic. -->
+  <div class="season-picker" id="seasonPicker">
+    <button class="season-btn active" data-theme="summer">Summer</button>
+    <button class="season-btn" data-theme="spring">Spring</button>
+    <button class="season-btn" data-theme="autumn">Autumn</button>
+    <button class="season-btn" data-theme="winter">Winter</button>
+  </div>
 
   <!-- Session length picker: this decides which "species" the tree will be -->
   <div class="length-picker" id="lengthPicker">
@@ -351,9 +498,9 @@
     const canopyR = 14 + g * 26;
     treeSvg.innerHTML = `
       <rect x="45" y="${130 - h}" width="10" height="${h}" fill="var(--bark)" rx="2"/>
-      <circle cx="50" cy="${130 - h - canopyR * 0.6}" r="${canopyR}" fill="#6E8E5F" />
-      <circle cx="${50 - canopyR*0.5}" cy="${130 - h - canopyR*0.3}" r="${canopyR*0.7}" fill="#7C9473" />
-      <circle cx="${50 + canopyR*0.5}" cy="${130 - h - canopyR*0.3}" r="${canopyR*0.7}" fill="#7C9473" />
+      <circle cx="50" cy="${130 - h - canopyR * 0.6}" r="${canopyR}" fill="var(--moss)" opacity="0.85" />
+      <circle cx="${50 - canopyR*0.5}" cy="${130 - h - canopyR*0.3}" r="${canopyR*0.7}" fill="var(--moss)" />
+      <circle cx="${50 + canopyR*0.5}" cy="${130 - h - canopyR*0.3}" r="${canopyR*0.7}" fill="var(--moss)" />
     `;
   }
 
@@ -361,8 +508,8 @@
     const h = 30 + g * 85;
     treeSvg.innerHTML = `
       <rect x="46" y="${130 - h}" width="8" height="${h}" fill="var(--bark)" rx="2"/>
-      <polygon points="50,${130-h-10} ${50-14-g*10},${130-h+40} ${50+14+g*10},${130-h+40}" fill="#4F7A57"/>
-      <polygon points="50,${130-h+20} ${50-11-g*8},${130-h+65} ${50+11+g*8},${130-h+65}" fill="#5C8B62"/>
+      <polygon points="50,${130-h-10} ${50-14-g*10},${130-h+40} ${50+14+g*10},${130-h+40}" fill="var(--moss)" opacity="0.9"/>
+      <polygon points="50,${130-h+20} ${50-11-g*8},${130-h+65} ${50+11+g*8},${130-h+65}" fill="var(--moss)"/>
     `;
   }
 
@@ -398,6 +545,7 @@
     const offset = RING_CIRCUMFERENCE * (1 - growth);
     ringProgress.style.strokeDashoffset = offset;
     ringProgress.classList.toggle('dying', isDead);
+    ringProgress.classList.toggle('active', isRunning && !isDead);
 
     // Tree
     treeWrap.classList.toggle('dead', isDead);
@@ -565,6 +713,48 @@
     }
   }
 
+  // ---------- Ambient particles ----------
+  // Creates a handful of drifting shapes with randomized horizontal
+  // position, speed, and delay so they don't all move in lockstep.
+  // The shape/color itself is controlled entirely by CSS (see [data-theme]
+  // rules above) — this JS just decides HOW MANY and WHERE they start.
+  const ambience = document.getElementById('ambience');
+  const PARTICLE_COUNT = 14;
+
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    const p = document.createElement('div');
+    p.className = 'particle';
+    p.style.setProperty('--x', `${Math.random() * 100}%`);
+    p.style.setProperty('--dur', `${10 + Math.random() * 10}s`); // 10–20s to fall
+    p.style.setProperty('--delay', `${Math.random() * -20}s`);  // negative delay staggers start times
+    ambience.appendChild(p);
+  }
+
+  // ---------- Theme (season) switching ----------
+  const seasonPicker = document.getElementById('seasonPicker');
+  const THEME_KEY = 'grove-theme';
+
+  function applyTheme(theme) {
+    if (theme === 'summer') {
+      document.body.removeAttribute('data-theme'); // summer = the default, no override needed
+    } else {
+      document.body.setAttribute('data-theme', theme);
+    }
+    seasonPicker.querySelectorAll('.season-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.theme === theme);
+    });
+    localStorage.setItem(THEME_KEY, theme);
+  }
+
+  seasonPicker.addEventListener('click', (e) => {
+    const btn = e.target.closest('.season-btn');
+    if (!btn) return;
+    applyTheme(btn.dataset.theme);
+  });
+
+  // Restore whichever season was picked last time, defaulting to summer.
+  applyTheme(localStorage.getItem(THEME_KEY) || 'summer');
+
   // ---------- Leaderboard ---------- 
   // No backend yet, so this is mock data standing in for what Firebase
   // will eventually provide. "You" is a placeholder too, for now — once
@@ -575,7 +765,7 @@
   let activeMetric = 'hours';
 
   const leaderboardData = [
-    { name: 'You',      hours: 0.0, streak: 0,  trees: 0,  isYou: true },
+    { name: 'You',      hours: 4.5, streak: 3,  trees: 6,  isYou: true },
     { name: 'Priya',    hours: 12.0, streak: 9,  trees: 21 },
     { name: 'Marcus',   hours: 7.25, streak: 14, trees: 15 },
     { name: 'Sofia',    hours: 2.0,  streak: 1,  trees: 4  },
