@@ -128,6 +128,42 @@
     font-weight: 600;
   }
 
+  /* ---------- Auth box ---------- */
+  .auth-box {
+    margin-bottom: 24px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--card);
+  }
+
+  .auth-input {
+    width: 100%;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    background: var(--soil);
+    color: var(--pine);
+  }
+
+  .auth-buttons { display: flex; gap: 8px; }
+  .auth-buttons button { flex: 1; padding: 10px; }
+
+  .auth-error {
+    color: var(--danger);
+    font-size: 13px;
+    margin: 8px 0 0;
+    min-height: 16px;
+  }
+
+  .auth-status {
+    font-size: 14px;
+    margin: 0 0 10px;
+  }
+
   /* ---------- Ambient season particles ---------- */
   /* A handful of small floating shapes drifting down the page. Purely
      decorative (pointer-events: none so they never block clicks), and
@@ -385,6 +421,22 @@
   <h1>Blossom</h1>
   <p class="subtitle">Your mind will blossom along with this tree.</p>
 
+  <!-- ---------- Auth (username-based, backed by Firebase) ---------- -->
+  <div class="auth-box" id="authLoggedOut">
+    <input class="auth-input" id="usernameInput" placeholder="username" autocomplete="username" />
+    <input class="auth-input" id="passwordInput" type="password" placeholder="password" autocomplete="current-password" />
+    <div class="auth-buttons">
+      <button class="btn-secondary" id="signupBtn" type="button">Sign up</button>
+      <button class="btn-primary" id="loginBtn" type="button">Log in</button>
+    </div>
+    <p class="auth-error" id="authError"></p>
+  </div>
+
+  <div class="auth-box" id="authLoggedIn" style="display:none;">
+    <p class="auth-status">Signed in as <strong id="currentUsername"></strong></p>
+    <button class="btn-secondary" id="logoutBtn" type="button">Log out</button>
+  </div>
+
   <!-- Theme picker: swaps the CSS custom properties in :root by setting
        data-theme on <body>. Doesn't touch layout or any other logic. -->
   <div class="season-picker" id="seasonPicker">
@@ -442,7 +494,43 @@
 
 </div>
 
-<script>
+<script type="module">
+  /*
+    ============================================================
+    Firebase setup
+    ============================================================
+    Loaded straight from Google's CDN as ES modules — no npm install,
+    no build step, works directly from a plain HTML file on GitHub Pages.
+  */
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+  import {
+    getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+    signOut, onAuthStateChanged
+  } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+  import {
+    getFirestore, doc, getDoc, setDoc, updateDoc, increment,
+    collection, query, orderBy, limit, getDocs
+  } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCvKnSa7A6LrN8czx_jajwEwQd-oMIrL0U",
+    authDomain: "blossom-study-timer.firebaseapp.com",
+    projectId: "blossom-study-timer",
+    storageBucket: "blossom-study-timer.firebasestorage.app",
+    messagingSenderId: "245281404122",
+    appId: "1:245281404122:web:8d5a3b319de11a768e21e3",
+  };
+
+  const firebaseApp = initializeApp(firebaseConfig);
+  const auth = getAuth(firebaseApp);
+  const db = getFirestore(firebaseApp);
+
+  // Firebase Auth doesn't have real "usernames" — only email/password. So we
+  // fake it: a username becomes "username@blossom.local" behind the scenes,
+  // and the user never sees or types an email at all.
+  const FAKE_EMAIL_DOMAIN = "blossom.local";
+  const usernameToEmail = (username) => `${username.trim().toLowerCase()}@${FAKE_EMAIL_DOMAIN}`;
+
   /*
     ============================================================
     GROVE — plain JavaScript, no frameworks or build step.
@@ -593,6 +681,7 @@
     clearInterval(timerId);
     statusLine.textContent = 'Session complete — your tree made it!';
     clearSavedState();
+    recordCompletedSession(sessionMinutes);
     render();
   }
 
@@ -755,47 +844,170 @@
   // Restore whichever season was picked last time, defaulting to summer.
   applyTheme(localStorage.getItem(THEME_KEY) || 'summer');
 
+  // ---------- Auth ----------
+  const authLoggedOut  = document.getElementById('authLoggedOut');
+  const authLoggedIn   = document.getElementById('authLoggedIn');
+  const usernameInput  = document.getElementById('usernameInput');
+  const passwordInput  = document.getElementById('passwordInput');
+  const signupBtn      = document.getElementById('signupBtn');
+  const loginBtn       = document.getElementById('loginBtn');
+  const logoutBtn      = document.getElementById('logoutBtn');
+  const authError      = document.getElementById('authError');
+  const currentUsernameEl = document.getElementById('currentUsername');
+
+  // Creates the Firestore doc that tracks a user's stats, only if it
+  // doesn't already exist (so logging in later doesn't wipe progress).
+  async function ensureUserDoc(uid, username) {
+    const ref = doc(db, 'users', uid);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) {
+      await setDoc(ref, {
+        username,
+        totalHours: 0,
+        streak: 0,
+        treesGrown: 0,
+        lastSessionDate: null, // 'YYYY-MM-DD', used to calculate streaks
+      });
+    }
+  }
+
+  signupBtn.addEventListener('click', async () => {
+    authError.textContent = '';
+    const username = usernameInput.value.trim();
+    const password = passwordInput.value;
+    if (!username || !password) {
+      authError.textContent = 'Enter a username and password.';
+      return;
+    }
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, usernameToEmail(username), password);
+      await ensureUserDoc(cred.user.uid, username);
+    } catch (err) {
+      // Firebase's own error messages mention "email" — reworded here since
+      // the user never typed one.
+      if (err.code === 'auth/email-already-in-use') {
+        authError.textContent = 'That username is already taken.';
+      } else if (err.code === 'auth/weak-password') {
+        authError.textContent = 'Password must be at least 6 characters.';
+      } else {
+        authError.textContent = 'Could not sign up. Try again.';
+      }
+    }
+  });
+
+  loginBtn.addEventListener('click', async () => {
+    authError.textContent = '';
+    const username = usernameInput.value.trim();
+    const password = passwordInput.value;
+    if (!username || !password) {
+      authError.textContent = 'Enter a username and password.';
+      return;
+    }
+    try {
+      await signInWithEmailAndPassword(auth, usernameToEmail(username), password);
+    } catch (err) {
+      authError.textContent = 'Incorrect username or password.';
+    }
+  });
+
+  logoutBtn.addEventListener('click', () => signOut(auth));
+
+  // Fires on login, logout, AND once automatically when the page first
+  // loads (Firebase remembers the session), so this is the one place that
+  // keeps the UI in sync with whether someone's actually signed in.
+  onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      authLoggedOut.style.display = 'none';
+      authLoggedIn.style.display = 'block';
+      const snap = await getDoc(doc(db, 'users', user.uid));
+      currentUsernameEl.textContent = snap.exists() ? snap.data().username : user.email.split('@')[0];
+    } else {
+      authLoggedOut.style.display = 'block';
+      authLoggedIn.style.display = 'none';
+    }
+    renderLeaderboard(); // refresh so "you" highlighting matches who's signed in
+  });
+
+  // Called from finishSession() below when a session completes successfully.
+  // Updates hours/trees/streak in Firestore — this is what the leaderboard
+  // actually reads from.
+  async function recordCompletedSession(minutes) {
+    const user = auth.currentUser;
+    if (!user) return; // not signed in — nothing to save
+
+    const ref = doc(db, 'users', user.uid);
+    const snap = await getDoc(ref);
+    const data = snap.exists() ? snap.data() : { streak: 0, lastSessionDate: null };
+
+    const today = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+
+    let newStreak = data.streak || 0;
+    if (data.lastSessionDate === today) {
+      // already studied today — streak doesn't change again
+    } else if (data.lastSessionDate === yesterday) {
+      newStreak += 1; // continued the streak
+    } else {
+      newStreak = 1; // missed a day (or first session ever) — streak restarts
+    }
+
+    await updateDoc(ref, {
+      totalHours: increment(minutes / 60),
+      treesGrown: increment(1),
+      streak: newStreak,
+      lastSessionDate: today,
+    });
+
+    renderLeaderboard();
+  }
+
   // ---------- Leaderboard ---------- 
-  // No backend yet, so this is mock data standing in for what Firebase
-  // will eventually provide. "You" is a placeholder too, for now — once
-  // sessions are actually tracked and saved, this would pull your real
-  // totals instead of a fixed number.
+  // Pulled live from Firestore, sorted by whichever metric tab is active.
+  // Visible to everyone, but the "you" highlight only applies when signed in.
   const lbTabs = document.getElementById('lbTabs');
   const lbList = document.getElementById('lbList');
-  let activeMetric = 'hours';
+  let activeMetric = 'totalHours';
 
-  const leaderboardData = [
-    { name: 'You',      hours: 4.5, streak: 3,  trees: 6,  isYou: true },
-    { name: 'Priya',    hours: 12.0, streak: 9,  trees: 21 },
-    { name: 'Marcus',   hours: 7.25, streak: 14, trees: 15 },
-    { name: 'Sofia',    hours: 2.0,  streak: 1,  trees: 4  },
-    { name: 'Devon',    hours: 9.5,  streak: 5,  trees: 18 },
-  ];
-
+  const metricByTab = { hours: 'totalHours', streak: 'streak', trees: 'treesGrown' };
   const metricLabels = {
-    hours:  (v) => `${v.toFixed(1)} hrs`,
-    streak: (v) => `${v} day${v === 1 ? '' : 's'}`,
-    trees:  (v) => `${v} tree${v === 1 ? '' : 's'}`,
+    totalHours: (v) => `${v.toFixed(1)} hrs`,
+    streak:     (v) => `${v} day${v === 1 ? '' : 's'}`,
+    treesGrown: (v) => `${v} tree${v === 1 ? '' : 's'}`,
   };
 
-  function renderLeaderboard() {
-    // Sort a COPY of the data (never mutate the original array) by whichever
-    // metric is currently selected, highest first.
-    const sorted = [...leaderboardData].sort((a, b) => b[activeMetric] - a[activeMetric]);
+  async function renderLeaderboard() {
+    const q = query(collection(db, 'users'), orderBy(activeMetric, 'desc'), limit(10));
+    let snap;
+    try {
+      snap = await getDocs(q);
+    } catch (err) {
+      lbList.innerHTML = `<li class="lb-row">Couldn't load the leaderboard right now.</li>`;
+      return;
+    }
 
-    lbList.innerHTML = sorted.map((person, index) => `
-      <li class="lb-row ${person.isYou ? 'you' : ''}">
-        <span class="lb-rank">${index + 1}</span>
-        <span class="lb-name">${person.name}</span>
-        <span class="lb-value">${metricLabels[activeMetric](person[activeMetric])}</span>
-      </li>
-    `).join('');
+    if (snap.empty) {
+      lbList.innerHTML = `<li class="lb-row">No one on the board yet — be the first!</li>`;
+      return;
+    }
+
+    const currentUid = auth.currentUser ? auth.currentUser.uid : null;
+    lbList.innerHTML = snap.docs.map((docSnap, index) => {
+      const person = docSnap.data();
+      const isYou = docSnap.id === currentUid;
+      return `
+        <li class="lb-row ${isYou ? 'you' : ''}">
+          <span class="lb-rank">${index + 1}</span>
+          <span class="lb-name">${person.username}</span>
+          <span class="lb-value">${metricLabels[activeMetric](person[activeMetric] || 0)}</span>
+        </li>
+      `;
+    }).join('');
   }
 
   lbTabs.addEventListener('click', (e) => {
     const tab = e.target.closest('.lb-tab');
     if (!tab) return;
-    activeMetric = tab.dataset.metric;
+    activeMetric = metricByTab[tab.dataset.metric];
     lbTabs.querySelectorAll('.lb-tab').forEach(t => {
       t.classList.toggle('active', t === tab);
     });
