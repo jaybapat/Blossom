@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Grove — Pomodoro Forest</title>
+
+<!--
+  Two Google Fonts:
+  - Fraunces: a serif with a slightly organic, hand-drawn feel — used for the
+    big timer number and the headline, since this app is about growth and
+    nature, not a sterile productivity tool.
+  - Inter: a clean sans-serif for buttons and small UI text, so the interface
+    itself stays quiet and out of the way.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  /* ---------- Design tokens ---------- */
+  :root {
+    --soil:      #F1EDE1; /* page background — warm, light, like paper or dry soil */
+    --pine:      #23392E; /* deep green — main text color */
+    --pine-dim:  #5B6E63; /* muted green — secondary text */
+    --bark:      #6B4630; /* brown — trunk, borders */
+    --moss:      #7C9473; /* soft green — leaves, progress ring */
+    --ember:     #C98A3D; /* warm gold — accent, active state */
+    --danger:    #B4472F; /* dying tree / warning */
+    --card:      #FFFFFF;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--soil);
+    color: var(--pine);
+    font-family: 'Inter', sans-serif;
+  }
+
+  .app {
+    width: 100%;
+    max-width: 420px;
+    padding: 40px 32px;
+    text-align: center;
+  }
+
+  h1 {
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: 28px;
+    margin: 0 0 4px;
+    letter-spacing: -0.01em;
+  }
+
+  .subtitle {
+    color: var(--pine-dim);
+    font-size: 14px;
+    margin: 0 0 36px;
+  }
+
+  /* ---------- Timer ring ---------- */
+  .ring-wrap {
+    position: relative;
+    width: 220px;
+    height: 220px;
+    margin: 0 auto 28px;
+  }
+
+  .ring-wrap svg { transform: rotate(-90deg); }
+
+  .ring-track { stroke: #E4DFD0; }
+  .ring-progress {
+    stroke: var(--moss);
+    stroke-linecap: round;
+    transition: stroke-dashoffset 1s linear, stroke 0.4s ease;
+  }
+  .ring-progress.dying { stroke: var(--danger); }
+
+  .time-label {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Fraunces', serif;
+    font-size: 44px;
+    font-weight: 600;
+  }
+
+  /* ---------- Tree ---------- */
+  .tree-wrap {
+    height: 140px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    margin-bottom: 28px;
+  }
+
+  .tree-wrap svg { transition: opacity 0.4s ease, filter 0.4s ease; }
+  .tree-wrap.dead svg { opacity: 0.35; filter: grayscale(1); }
+
+  .status-line {
+    font-size: 13px;
+    color: var(--pine-dim);
+    min-height: 18px;
+    margin-bottom: 24px;
+  }
+  .status-line.dying { color: var(--danger); font-weight: 500; }
+
+  /* ---------- Controls ---------- */
+  .controls { display: flex; gap: 10px; justify-content: center; }
+
+  button {
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 12px 22px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    cursor: pointer;
+  }
+
+  .btn-primary {
+    background: var(--pine);
+    color: var(--soil);
+  }
+  .btn-primary:hover { background: #1a2c22; }
+
+  .btn-secondary {
+    background: transparent;
+    color: var(--pine-dim);
+    border-color: #D9D2BE;
+  }
+  .btn-secondary:hover { border-color: var(--bark); color: var(--pine); }
+
+  button:disabled { opacity: 0.4; cursor: default; }
+
+  /* ---------- Length picker ---------- */
+  .length-picker {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-bottom: 28px;
+  }
+  .length-btn {
+    background: var(--card);
+    border: 1px solid #E4DFD0;
+    color: var(--pine-dim);
+    padding: 8px 14px;
+    font-size: 13px;
+    border-radius: 8px;
+  }
+  .length-btn.active {
+    border-color: var(--moss);
+    color: var(--pine);
+    background: #EEF2E9;
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <h1>Grove</h1>
+  <p class="subtitle">Stay on task. Watch it grow.</p>
+
+  <!-- Session length picker: this decides which "species" the tree will be -->
+  <div class="length-picker" id="lengthPicker">
+    <button class="length-btn" data-minutes="25">25 min · Sprout</button>
+    <button class="length-btn" data-minutes="45">45 min · Oak</button>
+    <button class="length-btn" data-minutes="60">60 min · Redwood</button>
+  </div>
+
+  <!-- Circular countdown ring -->
+  <div class="ring-wrap">
+    <svg width="220" height="220" viewBox="0 0 220 220">
+      <circle class="ring-track" cx="110" cy="110" r="100" fill="none" stroke-width="10" />
+      <circle id="ringProgress" class="ring-progress" cx="110" cy="110" r="100"
+              fill="none" stroke-width="10"
+              stroke-dasharray="628" stroke-dashoffset="0" />
+    </svg>
+    <div class="time-label" id="timeLabel">25:00</div>
+  </div>
+
+  <!-- The tree itself, drawn as SVG and swapped/scaled by growth stage -->
+  <div class="tree-wrap" id="treeWrap">
+    <svg id="treeSvg" width="100" height="130" viewBox="0 0 100 130"></svg>
+  </div>
+
+  <p class="status-line" id="statusLine">Pick a length, then press start.</p>
+
+  <div class="controls">
+    <button class="btn-primary" id="startBtn">Start</button>
+    <button class="btn-secondary" id="resetBtn">Reset</button>
+  </div>
+</div>
+
+<script>
+  /*
+    ============================================================
+    GROVE — plain JavaScript, no frameworks or build step.
+    Everything below is explained inline since this is meant to
+    be readable while you're still learning.
+    ============================================================
+  */
+
+  // ---------- State ----------
+  // "State" just means: the current values that describe what's happening
+  // right now. We keep them in plain variables and re-draw the screen
+  // whenever they change.
+  let sessionMinutes = 25;      // chosen session length
+  let secondsLeft = sessionMinutes * 60;
+  let timerId = null;           // holds the setInterval reference so we can stop it
+  let isRunning = false;
+  let isDead = false;           // true once the tree has died this session
+
+  // Tracks how long the tab has been hidden, so we can kill the tree
+  // if it's been more than 30 seconds.
+  let hiddenSince = null;
+  const KILL_AFTER_MS = 30 * 1000; // 30 seconds, in milliseconds
+
+  // ---------- Elements ----------
+  // Grabbing references to the HTML elements we'll update from JS.
+  const timeLabel   = document.getElementById('timeLabel');
+  const ringProgress = document.getElementById('ringProgress');
+  const startBtn    = document.getElementById('startBtn');
+  const resetBtn    = document.getElementById('resetBtn');
+  const statusLine  = document.getElementById('statusLine');
+  const treeWrap    = document.getElementById('treeWrap');
+  const treeSvg     = document.getElementById('treeSvg');
+  const lengthPicker = document.getElementById('lengthPicker');
+
+  const RING_CIRCUMFERENCE = 2 * Math.PI * 100; // matches the circle's r="100"
+
+  // ---------- Tree species (by session length) ----------
+  // Each species is just a function that draws a slightly different tree
+  // shape for a given "growth" amount (0 = seed, 1 = fully grown).
+  // Keeping this as simple hand-drawn SVG paths, no images needed.
+
+  function drawSprout(g) {
+    // g = growth, 0 to 1
+    const h = 20 + g * 70; // trunk height grows
+    treeSvg.innerHTML = `
+      <rect x="47" y="${130 - h}" width="6" height="${h}" fill="var(--bark)" rx="2"/>
+      <circle cx="50" cy="${130 - h - 10}" r="${10 + g * 18}" fill="var(--moss)" />
+    `;
+  }
+
+  function drawOak(g) {
+    const h = 25 + g * 65;
+    const canopyR = 14 + g * 26;
+    treeSvg.innerHTML = `
+      <rect x="45" y="${130 - h}" width="10" height="${h}" fill="var(--bark)" rx="2"/>
+      <circle cx="50" cy="${130 - h - canopyR * 0.6}" r="${canopyR}" fill="#6E8E5F" />
+      <circle cx="${50 - canopyR*0.5}" cy="${130 - h - canopyR*0.3}" r="${canopyR*0.7}" fill="#7C9473" />
+      <circle cx="${50 + canopyR*0.5}" cy="${130 - h - canopyR*0.3}" r="${canopyR*0.7}" fill="#7C9473" />
+    `;
+  }
+
+  function drawRedwood(g) {
+    const h = 30 + g * 85;
+    treeSvg.innerHTML = `
+      <rect x="46" y="${130 - h}" width="8" height="${h}" fill="var(--bark)" rx="2"/>
+      <polygon points="50,${130-h-10} ${50-14-g*10},${130-h+40} ${50+14+g*10},${130-h+40}" fill="#4F7A57"/>
+      <polygon points="50,${130-h+20} ${50-11-g*8},${130-h+65} ${50+11+g*8},${130-h+65}" fill="#5C8B62"/>
+    `;
+  }
+
+  const species = {
+    25: drawSprout,
+    45: drawOak,
+    60: drawRedwood,
+  };
+
+  function drawDeadTree() {
+    // A bare, leafless trunk — used when the tree dies.
+    treeSvg.innerHTML = `
+      <rect x="47" y="60" width="6" height="70" fill="var(--bark)" rx="2"/>
+      <line x1="50" y1="60" x2="30" y2="45" stroke="var(--bark)" stroke-width="4" stroke-linecap="round"/>
+      <line x1="50" y1="65" x2="70" y2="48" stroke="var(--bark)" stroke-width="4" stroke-linecap="round"/>
+    `;
+  }
+
+  // ---------- Rendering ----------
+  // Redraws everything on screen based on current state. Called after
+  // every change so the UI never gets out of sync with the variables above.
+  function render() {
+    const totalSeconds = sessionMinutes * 60;
+    const elapsed = totalSeconds - secondsLeft;
+    const growth = Math.min(elapsed / totalSeconds, 1);
+
+    // Time label, formatted as MM:SS
+    const mins = Math.floor(secondsLeft / 60).toString().padStart(2, '0');
+    const secs = (secondsLeft % 60).toString().padStart(2, '0');
+    timeLabel.textContent = `${mins}:${secs}`;
+
+    // Countdown ring: dashoffset shrinks as time passes
+    const offset = RING_CIRCUMFERENCE * (1 - growth);
+    ringProgress.style.strokeDashoffset = offset;
+    ringProgress.classList.toggle('dying', isDead);
+
+    // Tree
+    treeWrap.classList.toggle('dead', isDead);
+    if (isDead) {
+      drawDeadTree();
+    } else {
+      const draw = species[sessionMinutes] || drawSprout;
+      draw(growth);
+    }
+
+    // Buttons
+    startBtn.textContent = isRunning ? 'Pause' : (secondsLeft === totalSeconds ? 'Start' : 'Resume');
+    lengthPicker.querySelectorAll('.length-btn').forEach(btn => {
+      btn.classList.toggle('active', Number(btn.dataset.minutes) === sessionMinutes);
+      btn.disabled = isRunning;
+    });
+  }
+
+  // ---------- Timer logic ----------
+  function tick() {
+    secondsLeft -= 1;
+    if (secondsLeft <= 0) {
+      secondsLeft = 0;
+      finishSession();
+      return;
+    }
+    render();
+  }
+
+  function startTimer() {
+    if (isDead) return; // can't resume a dead session — must reset
+    isRunning = true;
+    statusLine.textContent = 'Stay on this tab. Leaving for 30 seconds kills the tree.';
+    statusLine.classList.remove('dying');
+    timerId = setInterval(tick, 1000);
+    render();
+  }
+
+  function pauseTimer() {
+    isRunning = false;
+    clearInterval(timerId);
+    statusLine.textContent = 'Paused.';
+    render();
+  }
+
+  function finishSession() {
+    isRunning = false;
+    clearInterval(timerId);
+    statusLine.textContent = 'Session complete — your tree made it!';
+    render();
+  }
+
+  function killTree() {
+    if (isDead) return;
+    isDead = true;
+    isRunning = false;
+    clearInterval(timerId);
+    statusLine.textContent = 'You left too long — the tree died. Reset to try again.';
+    statusLine.classList.add('dying');
+    render();
+  }
+
+  function resetSession() {
+    clearInterval(timerId);
+    isRunning = false;
+    isDead = false;
+    secondsLeft = sessionMinutes * 60;
+    hiddenSince = null;
+    statusLine.textContent = 'Pick a length, then press start.';
+    statusLine.classList.remove('dying');
+    render();
+  }
+
+  // ---------- Visibility tracking (the "leave for 1 minute" rule) ----------
+  // The Page Visibility API tells us when the browser tab is hidden
+  // (user switched tabs, minimized the window, or locked their phone).
+  // We can't see OTHER tabs — only whether THIS tab is currently visible.
+  document.addEventListener('visibilitychange', () => {
+    if (!isRunning) return; // only matters during an active session
+
+    if (document.hidden) {
+      hiddenSince = Date.now();
+    } else if (hiddenSince) {
+      const awayMs = Date.now() - hiddenSince;
+      hiddenSince = null;
+      if (awayMs > KILL_AFTER_MS) {
+        killTree();
+      }
+    }
+  });
+
+  // ---------- Event wiring ----------
+  startBtn.addEventListener('click', () => {
+    if (isRunning) {
+      pauseTimer();
+    } else {
+      startTimer();
+    }
+  });
+
+  resetBtn.addEventListener('click', resetSession);
+
+  lengthPicker.addEventListener('click', (e) => {
+    const btn = e.target.closest('.length-btn');
+    if (!btn || isRunning) return;
+    sessionMinutes = Number(btn.dataset.minutes);
+    resetSession();
+  });
+
+  // Initial paint
+  render();
+</script>
+
+</body>
+</html>
