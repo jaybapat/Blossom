@@ -160,6 +160,85 @@
     color: var(--pine);
     background: #EEF2E9;
   }
+
+  /* ---------- Leaderboard ---------- */
+  .leaderboard {
+    text-align: left;
+    margin-top: 8px;
+    padding-top: 28px;
+    border-top: 1px solid #E4DFD0;
+  }
+
+  .leaderboard h2 {
+    font-family: 'Fraunces', serif;
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 0 14px;
+    text-align: center;
+  }
+
+  .lb-tabs {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+    margin-bottom: 16px;
+  }
+
+  .lb-tab {
+    background: transparent;
+    border: 1px solid #E4DFD0;
+    color: var(--pine-dim);
+    padding: 6px 14px;
+    font-size: 13px;
+    border-radius: 999px; /* pill shape */
+  }
+
+  .lb-tab.active {
+    background: var(--pine);
+    border-color: var(--pine);
+    color: var(--soil);
+  }
+
+  .lb-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .lb-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+  }
+
+  .lb-row.you {
+    background: #EEF2E9; /* highlight your own row so it's easy to spot */
+  }
+
+  .lb-rank {
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--pine-dim);
+    width: 20px;
+    text-align: right;
+  }
+
+  .lb-row.you .lb-rank { color: var(--moss); }
+
+  .lb-name {
+    flex: 1;
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .lb-value {
+    font-size: 14px;
+    color: var(--pine-dim);
+    font-variant-numeric: tabular-nums; /* keeps numbers aligned as they change */
+  }
 </style>
 </head>
 <body>
@@ -197,6 +276,23 @@
     <button class="btn-primary" id="startBtn">Start</button>
     <button class="btn-secondary" id="resetBtn">Reset</button>
   </div>
+
+  <!-- ---------- Leaderboard ---------- -->
+  <div class="leaderboard">
+    <h2>Leaderboard</h2>
+
+    <!-- Three separate rankings, not one blended score — hours, streaks,
+         and trees measure different things, so we let you switch between
+         them rather than guessing how to weigh them against each other. -->
+    <div class="lb-tabs" id="lbTabs">
+      <button class="lb-tab active" data-metric="hours">Hours</button>
+      <button class="lb-tab" data-metric="streak">Streak</button>
+      <button class="lb-tab" data-metric="trees">Trees</button>
+    </div>
+
+    <ol class="lb-list" id="lbList"></ol>
+  </div>
+
 </div>
 
 <script>
@@ -469,6 +565,53 @@
     }
   }
 
+  // ---------- Leaderboard ---------- 
+  // No backend yet, so this is mock data standing in for what Firebase
+  // will eventually provide. "You" is a placeholder too, for now — once
+  // sessions are actually tracked and saved, this would pull your real
+  // totals instead of a fixed number.
+  const lbTabs = document.getElementById('lbTabs');
+  const lbList = document.getElementById('lbList');
+  let activeMetric = 'hours';
+
+  const leaderboardData = [
+    { name: 'You',      hours: 0.0, streak: 0,  trees: 0,  isYou: true },
+    { name: 'Priya',    hours: 12.0, streak: 9,  trees: 21 },
+    { name: 'Marcus',   hours: 7.25, streak: 14, trees: 15 },
+    { name: 'Sofia',    hours: 2.0,  streak: 1,  trees: 4  },
+    { name: 'Devon',    hours: 9.5,  streak: 5,  trees: 18 },
+  ];
+
+  const metricLabels = {
+    hours:  (v) => `${v.toFixed(1)} hrs`,
+    streak: (v) => `${v} day${v === 1 ? '' : 's'}`,
+    trees:  (v) => `${v} tree${v === 1 ? '' : 's'}`,
+  };
+
+  function renderLeaderboard() {
+    // Sort a COPY of the data (never mutate the original array) by whichever
+    // metric is currently selected, highest first.
+    const sorted = [...leaderboardData].sort((a, b) => b[activeMetric] - a[activeMetric]);
+
+    lbList.innerHTML = sorted.map((person, index) => `
+      <li class="lb-row ${person.isYou ? 'you' : ''}">
+        <span class="lb-rank">${index + 1}</span>
+        <span class="lb-name">${person.name}</span>
+        <span class="lb-value">${metricLabels[activeMetric](person[activeMetric])}</span>
+      </li>
+    `).join('');
+  }
+
+  lbTabs.addEventListener('click', (e) => {
+    const tab = e.target.closest('.lb-tab');
+    if (!tab) return;
+    activeMetric = tab.dataset.metric;
+    lbTabs.querySelectorAll('.lb-tab').forEach(t => {
+      t.classList.toggle('active', t === tab);
+    });
+    renderLeaderboard();
+  });
+
   // ---------- Event wiring ----------
   startBtn.addEventListener('click', () => {
     if (isRunning || isDead) return; // can't start twice or restart a dead tree
@@ -487,6 +630,7 @@
   // Initial paint — check for a session to restore before drawing the page
   loadState();
   render();
+  renderLeaderboard();
 </script>
 
 </body>
