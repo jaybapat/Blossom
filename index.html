@@ -312,8 +312,10 @@
       draw(growth);
     }
 
-    // Buttons
-    startBtn.textContent = isRunning ? 'Pause' : (secondsLeft === totalSeconds ? 'Start' : 'Resume');
+    // Buttons — Start is one-way: once a session begins, it's disabled
+    // until Reset is pressed. There's no pause.
+    startBtn.textContent = 'Start';
+    startBtn.disabled = isRunning || isDead;
     lengthPicker.querySelectorAll('.length-btn').forEach(btn => {
       btn.classList.toggle('active', Number(btn.dataset.minutes) === sessionMinutes);
       btn.disabled = isRunning;
@@ -328,6 +330,7 @@
       finishSession();
       return;
     }
+    saveState();
     render();
   }
 
@@ -337,13 +340,7 @@
     statusLine.textContent = 'Stay on this tab. Leaving for 30 seconds kills the tree.';
     statusLine.classList.remove('dying');
     timerId = setInterval(tick, 1000);
-    render();
-  }
-
-  function pauseTimer() {
-    isRunning = false;
-    clearInterval(timerId);
-    statusLine.textContent = 'Paused.';
+    saveState();
     render();
   }
 
@@ -351,6 +348,7 @@
     isRunning = false;
     clearInterval(timerId);
     statusLine.textContent = 'Session complete — your tree made it!';
+    clearSavedState();
     render();
   }
 
@@ -361,6 +359,7 @@
     clearInterval(timerId);
     statusLine.textContent = 'You left too long — the tree died. Reset to try again.';
     statusLine.classList.add('dying');
+    saveState();
     render();
   }
 
@@ -372,10 +371,11 @@
     hiddenSince = null;
     statusLine.textContent = 'Pick a length, then press start.';
     statusLine.classList.remove('dying');
+    clearSavedState();
     render();
   }
 
-  // ---------- Visibility tracking (the "leave for 1 minute" rule) ----------
+  // ---------- Visibility tracking (the "leave for 30 seconds" rule) ----------
   // The Page Visibility API tells us when the browser tab is hidden
   // (user switched tabs, minimized the window, or locked their phone).
   // We can't see OTHER tabs — only whether THIS tab is currently visible.
@@ -393,13 +393,86 @@
     }
   });
 
+  // ---------- Persistence (survives the browser discarding this tab) ----------
+  // Chrome (and other browsers) can throw away a background tab's memory to
+  // save RAM, then fully reload the page when you switch back. That wipes
+  // every variable above back to its starting value. We can't stop the
+  // browser from doing this, but we can make the page recover gracefully:
+  // save the important state to localStorage on every tick, and on page
+  // load, check if there's a session to pick back up.
+  const STORAGE_KEY = 'grove-session';
+
+  function saveState() {
+    const state = {
+      sessionMinutes,
+      secondsLeft,
+      isDead,
+      isRunning,
+      savedAt: Date.now(), // wall-clock time, so we can measure real elapsed time later
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function clearSavedState() {
+    localStorage.removeItem(STORAGE_KEY);
+  }
+
+  function loadState() {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return; // nothing saved — fresh page, nothing to restore
+
+    let saved;
+    try {
+      saved = JSON.parse(raw);
+    } catch (e) {
+      return; // corrupted data, ignore it
+    }
+
+    sessionMinutes = saved.sessionMinutes;
+
+    if (saved.isDead || !saved.isRunning) {
+      // Session wasn't actively counting down when we left — just restore
+      // it exactly as it was (dead, paused-at-start, or finished).
+      secondsLeft = saved.secondsLeft;
+      isDead = saved.isDead;
+      if (isDead) {
+        statusLine.textContent = 'You left too long — the tree died. Reset to try again.';
+        statusLine.classList.add('dying');
+      }
+      return;
+    }
+
+    // It WAS running when the page went away. Figure out how much real
+    // time has passed since our last save, using actual clock time rather
+    // than counting ticks (since ticks stop completely while discarded).
+    const elapsedMs = Date.now() - saved.savedAt;
+    const elapsedSeconds = Math.round(elapsedMs / 1000);
+
+    if (elapsedMs > KILL_AFTER_MS) {
+      // Gone longer than the allowed buffer — same rule as switching tabs.
+      isDead = true;
+      secondsLeft = saved.secondsLeft;
+      statusLine.textContent = 'You left too long — the tree died. Reset to try again.';
+      statusLine.classList.add('dying');
+      return;
+    }
+
+    // Within the buffer — pick up right where the countdown would actually
+    // be now, and keep running.
+    secondsLeft = Math.max(saved.secondsLeft - elapsedSeconds, 0);
+    if (secondsLeft <= 0) {
+      finishSession();
+    } else {
+      isRunning = true;
+      timerId = setInterval(tick, 1000);
+      statusLine.textContent = 'Stay on this tab. Leaving for 30 seconds kills the tree.';
+    }
+  }
+
   // ---------- Event wiring ----------
   startBtn.addEventListener('click', () => {
-    if (isRunning) {
-      pauseTimer();
-    } else {
-      startTimer();
-    }
+    if (isRunning || isDead) return; // can't start twice or restart a dead tree
+    startTimer();
   });
 
   resetBtn.addEventListener('click', resetSession);
@@ -411,7 +484,8 @@
     resetSession();
   });
 
-  // Initial paint
+  // Initial paint — check for a session to restore before drawing the page
+  loadState();
   render();
 </script>
 
